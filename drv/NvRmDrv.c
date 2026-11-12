@@ -1,4 +1,8 @@
 #include <ntddk.h>
+#include <ntifs.h>
+#include <ntstrsafe.h>
+#include <intrin.h>
+#include <ntddk.h>
 #include <ntstrsafe.h>
 #include <intrin.h>
 
