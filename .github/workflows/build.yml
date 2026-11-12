@@ -21,14 +21,35 @@ jobs:
         run: |
           Write-Host "Installing WDK via winget..."
           winget install --source winget --exact --id Microsoft.WindowsWDK.10.0.26100 --silent --accept-package-agreements --accept-source-agreements
-          if ($LASTEXITCODE -ne 0) { throw "WDK install failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "WDK install failed" }
+
+          Write-Host "Locating WDK.vsix..."
+          $candidates = @(
+            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\10.0.26100.0\WDK.vsix",
+            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\10.0.26100.0\amd64\WDK.vsix",
+            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\WDK.vsix",
+            "C:\Program Files (x86)\Windows Kits\10\Vsix\WDK.vsix"
+          )
+          $vsixPath = $null
+          foreach ($p in $candidates) {
+            if (Test-Path $p) { $vsixPath = $p; break }
+          }
+          if (-not $vsixPath) {
+            $found = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $vsixPath = $found.FullName }
+          }
+          if (-not $vsixPath) {
+            Write-Host "Contents of Vsix dir:"
+            Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Vsix" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+            throw "WDK.vsix not found anywhere"
+          }
+          Write-Host "Found VSIX at: $vsixPath"
 
           Write-Host "Installing WDK VSIX..."
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsixInstaller = & $vswhere -nologo -latest -products * -property enginePath | Join-Path -ChildPath 'VSIXInstaller.exe'
-          $vsixPath = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $vsixPath) { throw "WDK.vsix not found after WDK install" }
-          Start-Process -FilePath $vsixInstaller -ArgumentList "/quiet", "/admin", "`"$vsixPath`"" -Wait -NoNewWindow
+          $vsInstaller = & $vswhere -nologo -latest -products * -property enginePath
+          $vsixInstaller = Join-Path $vsInstaller 'VSIXInstaller.exe'
+          Start-Process -FilePath $vsixInstaller -ArgumentList "/q", "/a", "`"$vsixPath`"" -Wait -NoNewWindow
 
           $km = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
                 Where-Object { Test-Path (Join-Path $_.FullName "km\ntddk.h") } |
