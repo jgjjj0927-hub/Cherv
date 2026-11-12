@@ -11,11 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install winget
+        uses: Cyberboss/install-winget@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install WDK
         shell: pwsh
         run: |
           Write-Host "Installing WDK via winget..."
-          winget install --source winget --exact --id Microsoft.WindowsWDK.10.0.26100 --silent --accept-package-agreements --accept-source-agreements --log "$env:TEMP\wdk-install.log"
+          winget install --source winget --exact --id Microsoft.WindowsWDK.10.0.26100 --silent --accept-package-agreements --accept-source-agreements
           if ($LASTEXITCODE -ne 0) { throw "WDK install failed with exit code $LASTEXITCODE" }
 
           Write-Host "Installing WDK VSIX..."
