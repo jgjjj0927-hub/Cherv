@@ -1,26 +1,22 @@
 - name: Install WDK
         shell: pwsh
         run: |
-          # 1. Устанавливаем WDK 26100 через winget (совместим с VS2022)
           Write-Host "Installing WDK via winget..."
           winget install --source winget --exact --id Microsoft.WindowsWDK.10.0.26100 --silent --accept-package-agreements --accept-source-agreements --log "$env:TEMP\wdk-install.log"
           if ($LASTEXITCODE -ne 0) { throw "WDK install failed with exit code $LASTEXITCODE" }
 
-          # 2. Ставим VSIX-расширение отдельно (без него cl не увидит km-заголовки)
           Write-Host "Installing WDK VSIX..."
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsixInstaller = & $vswhere -nologo -latest -products * -property enginePath | Join-Path -ChildPath 'VSIXInstaller.exe'
           $vsixPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix\VS2022\10.0.26100.0\$env:PROCESSOR_ARCHITECTURE\WDK.vsix"
-          
+
           if (-not (Test-Path $vsixPath)) {
-              # fallback: ищем любой WDK.vsix в Vsix
               $vsixPath = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1 -ExpandProperty FullName
           }
           if (-not $vsixPath) { throw "WDK.vsix not found after WDK install" }
 
           Start-Process -FilePath $vsixInstaller -ArgumentList "/quiet", "/admin", "`"$vsixPath`"" -Wait -NoNewWindow
-          
-          # 3. Проверяем, что ntddk.h появился
+
           $km = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
                 Where-Object { Test-Path (Join-Path $_.FullName "km\ntddk.h") } |
                 Sort-Object Name -Descending | Select-Object -First 1
