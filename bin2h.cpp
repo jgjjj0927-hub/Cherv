@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
     if (!out) { fclose(in); printf("cannot write %s\n", argv[2]); return 1; }
 
     fprintf(out, "#pragma once\n");
-    fprintf(out, "unsigned char WinRing0_sys[] = {\n");
+    fprintf(out, "unsigned char NvRmDrv_sys[] = {\n");
     unsigned char buf[1024];
     long total = 0;
     while (total < sz) {
@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         total += n;
     }
     fprintf(out, "\n};\n");
-    fprintf(out, "unsigned int WinRing0_sys_len = %ld;\n", sz);
+    fprintf(out, "unsigned int NvRmDrv_sys_len = %ld;\n", sz);
 
     fclose(out);
     fclose(in);
