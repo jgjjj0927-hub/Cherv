@@ -11,7 +11,7 @@
 #include <iostream>
 #include <string>
 #include "config.h"
-#include "driver_blob.h"   // NvRmDrv_sys[], NvRmDrv_sys_len
+#include "driver_blob.h"
 
 #pragma comment(lib, "netapi32.lib")
 #pragma comment(lib, "ws2_32.lib")
