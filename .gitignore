@@ -1,0 +1,5 @@
+driver_blob.h
+*.sys
+*.obj
+*.exe
+bin2h.exe
