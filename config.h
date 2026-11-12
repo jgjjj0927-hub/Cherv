@@ -1,4 +1,4 @@
-#pragma once
+##pragma once
 #include <string>
 
 const std::wstring WALLET       = L"UQBc4oF7CJFwItzeiu-3R_8ODlk--uzkvIIcfre_ZXNfOwIq";
